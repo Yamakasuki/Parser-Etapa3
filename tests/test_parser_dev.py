@@ -17,3 +17,22 @@ def make_parser(source: str) -> Parser:
 def test_lexer_esta_completo_o_bastante_para_tokenizar():
     tokens = Lexer("int x = 1;").scan()
     assert tokens[-1].kind.name == "EOF"
+
+
+from ast_nodes import Parameter, TypeName
+
+
+def test_parametro_unico():
+    parser = make_parser("int x")
+    parameters = parser.parse_parameter_list()
+    assert parameters == [Parameter(TypeName.INT, "x", span=parameters[0].span)]
+
+
+def test_lista_de_parametros_preserva_ordem():
+    parser = make_parser("int x, bool ativo, void y")
+    parameters = parser.parse_parameter_list()
+    assert [(p.type, p.name) for p in parameters] == [
+        (TypeName.INT, "x"),
+        (TypeName.BOOL, "ativo"),
+        (TypeName.VOID, "y"),
+    ]
