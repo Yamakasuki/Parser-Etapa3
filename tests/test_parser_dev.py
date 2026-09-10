@@ -101,3 +101,21 @@ def test_aditiva_chama_multiplicativa_primeiro():
     assert expr.left.left.value == 10
     assert expr.left.right.value == 3
     assert expr.right.value == 2
+
+
+def test_relacional_e_igualdade():
+    expr = make_parser("1 < 2 == true").parse_expression()
+    assert expr.operator is BinaryOperator.EQUAL
+    assert expr.left.operator is BinaryOperator.LESS
+
+
+def test_logica_and_mais_apertada_que_or():
+    expr = make_parser("true || false && true").parse_expression()
+    assert expr.operator is BinaryOperator.LOGICAL_OR
+    assert expr.right.operator is BinaryOperator.LOGICAL_AND
+
+
+def test_parenteses_agora_fecham_o_ciclo_de_expressao():
+    wrapped = make_parser("(42)").parse_primary()
+    assert wrapped.value == 42
+    assert wrapped.span.end_column == 5

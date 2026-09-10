@@ -73,6 +73,16 @@ MULTIPLICATIVE_OPERATORS = {
     TokenKind.SLASH: BinaryOperator.DIVIDE,
     TokenKind.PERCENT: BinaryOperator.REMAINDER,
 }
+EQUALITY_OPERATORS = {
+    TokenKind.EQUAL_EQUAL: BinaryOperator.EQUAL,
+    TokenKind.NOT_EQUAL: BinaryOperator.NOT_EQUAL,
+}
+RELATIONAL_OPERATORS = {
+    TokenKind.LESS: BinaryOperator.LESS,
+    TokenKind.LESS_EQUAL: BinaryOperator.LESS_EQUAL,
+    TokenKind.GREATER: BinaryOperator.GREATER,
+    TokenKind.GREATER_EQUAL: BinaryOperator.GREATER_EQUAL,
+}
 
 
 class ParserError(Exception):
@@ -244,19 +254,23 @@ class Parser:
         raise NotImplementedError("implemente string_literals")
 
     def parse_expression(self) -> Expr:
-        raise NotImplementedError("implemente expression")
+        return self.parse_logical_or()
 
     def parse_logical_or(self) -> Expr:
-        raise NotImplementedError("implemente logical_or")
+        return self._parse_binary_level(
+            self.parse_logical_and, {TokenKind.LOGICAL_OR: BinaryOperator.LOGICAL_OR}
+        )
 
     def parse_logical_and(self) -> Expr:
-        raise NotImplementedError("implemente logical_and")
+        return self._parse_binary_level(
+            self.parse_equality, {TokenKind.LOGICAL_AND: BinaryOperator.LOGICAL_AND}
+        )
 
     def parse_equality(self) -> Expr:
-        raise NotImplementedError("implemente equality")
+        return self._parse_binary_level(self.parse_relational, EQUALITY_OPERATORS)
 
     def parse_relational(self) -> Expr:
-        raise NotImplementedError("implemente relational")
+        return self._parse_binary_level(self.parse_additive, RELATIONAL_OPERATORS)
 
     def parse_additive(self) -> Expr:
         return self._parse_binary_level(self.parse_multiplicative, ADDITIVE_OPERATORS)
