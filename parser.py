@@ -18,6 +18,7 @@ from ast_nodes import (
     Node,
     Parameter,
     PrintItem,
+    PrintStmt,
     Program,
     SourceSpan,
     Stmt,
@@ -267,13 +268,29 @@ class Parser:
         raise NotImplementedError("implemente return_statement")
 
     def parse_print_statement(self) -> Stmt:
-        raise NotImplementedError("implemente print_statement")
+        start = self.expect(TokenKind.KW_PRINT)
+        self.expect(TokenKind.LEFT_PAREN)
+        items = [self.parse_print_item()]
+        while self.match(TokenKind.COMMA) is not None:
+            items.append(self.parse_print_item())
+        self.expect(TokenKind.RIGHT_PAREN)
+        semicolon = self.expect(TokenKind.SEMICOLON)
+        return PrintStmt(items, span=self._span(start, semicolon))
 
     def parse_print_item(self) -> PrintItem:
-        raise NotImplementedError("implemente print_item")
+        if self.check(TokenKind.STRING_LITERAL):
+            return self.parse_string_literals()
+        return self.parse_expression()
 
     def parse_string_literals(self) -> StringLiteral:
-        raise NotImplementedError("implemente string_literals")
+        first = self.expect(TokenKind.STRING_LITERAL)
+        value = str(first.value)
+        last = first
+        while self.check(TokenKind.STRING_LITERAL):
+            token = self.advance()
+            value += str(token.value)
+            last = token
+        return StringLiteral(value, span=self._span(first, last))
 
     def parse_expression(self) -> Expr:
         return self.parse_logical_or()

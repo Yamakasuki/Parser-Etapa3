@@ -151,3 +151,29 @@ def test_atribuicao_encadeada_e_erro_sintatico():
 
     with pytest.raises(ParserError):
         make_parser("x = y = 1;").parse_id_or_call_statement()
+
+
+from ast_nodes import PrintStmt, StringLiteral
+
+
+def test_strings_adjacentes_viram_um_unico_stringliteral():
+    literal = make_parser('"resultado " "final = "').parse_string_literals()
+    assert isinstance(literal, StringLiteral)
+    assert literal.value == "resultado final = "
+
+
+def test_print_mistura_strings_e_expressoes():
+    stmt = make_parser('print("resultado " "final = ", x);').parse_print_statement()
+    assert isinstance(stmt, PrintStmt)
+    assert len(stmt.items) == 2
+    assert isinstance(stmt.items[0], StringLiteral)
+    assert stmt.items[0].value == "resultado final = "
+    assert isinstance(stmt.items[1], IdentifierExpr)
+
+
+def test_print_vazio_e_erro_sintatico():
+    import pytest
+    from parser import ParserError
+
+    with pytest.raises(ParserError):
+        make_parser("print();").parse_print_statement()
