@@ -4,9 +4,15 @@ from collections.abc import Sequence
 
 from Lexer import Token, TokenKind
 from ast_nodes import (
+    BinaryExpr,
+    BinaryOperator,
     Block,
+    BoolLiteral,
+    CallExpr,
     Expr,
     FunctionDecl,
+    IdentifierExpr,
+    IntLiteral,
     Node,
     Parameter,
     PrintItem,
@@ -15,6 +21,8 @@ from ast_nodes import (
     Stmt,
     StringLiteral,
     TypeName,
+    UnaryExpr,
+    UnaryOperator,
 )
 
 
@@ -36,12 +44,34 @@ STATEMENT_START = TYPE_START | {
     TokenKind.KW_PRINT,
     TokenKind.LEFT_BRACE,
 }
+# Subconjunto de EXPRESSION_START: exclui LOGICAL_NOT/MINUS, que pertencem a
+# unary, não a primary. Mantém o conjunto "esperado" preciso nos erros de primary.
+PRIMARY_START = {
+    TokenKind.LEFT_PAREN,
+    TokenKind.IDENTIFIER,
+    TokenKind.INT_LITERAL,
+    TokenKind.KW_TRUE,
+    TokenKind.KW_FALSE,
+}
 
 
 TYPE_BY_TOKEN = {
     TokenKind.KW_INT: TypeName.INT,
     TokenKind.KW_BOOL: TypeName.BOOL,
     TokenKind.KW_VOID: TypeName.VOID,
+}
+UNARY_OPERATORS = {
+    TokenKind.LOGICAL_NOT: UnaryOperator.NOT,
+    TokenKind.MINUS: UnaryOperator.NEGATE,
+}
+ADDITIVE_OPERATORS = {
+    TokenKind.PLUS: BinaryOperator.ADD,
+    TokenKind.MINUS: BinaryOperator.SUBTRACT,
+}
+MULTIPLICATIVE_OPERATORS = {
+    TokenKind.STAR: BinaryOperator.MULTIPLY,
+    TokenKind.SLASH: BinaryOperator.DIVIDE,
+    TokenKind.PERCENT: BinaryOperator.REMAINDER,
 }
 
 
@@ -229,16 +259,71 @@ class Parser:
         raise NotImplementedError("implemente relational")
 
     def parse_additive(self) -> Expr:
-        raise NotImplementedError("implemente additive")
+        return self._parse_binary_level(self.parse_multiplicative, ADDITIVE_OPERATORS)
 
     def parse_multiplicative(self) -> Expr:
-        raise NotImplementedError("implemente multiplicative")
+        return self._parse_binary_level(self.parse_unary, MULTIPLICATIVE_OPERATORS)
+
+    # helper compartilhado por todos os niveis de expressao binaria
+    def _parse_binary_level(self, operand, operators: dict[TokenKind, BinaryOperator]) -> Expr:
+        left = operand()
+        while True:
+            token = self.match(*operators.keys())
+            if token is None:
+                return left
+            right = operand()
+            left = BinaryExpr(
+                operators[token.kind],
+                left,
+                right,
+                span=self._span(left, right),
+            )
 
     def parse_unary(self) -> Expr:
-        raise NotImplementedError("implemente unary")
+        token = self.match(*UNARY_OPERATORS.keys())
+        if token is not None:
+            operand = self.parse_unary()
+            return UnaryExpr(UNARY_OPERATORS[token.kind], operand, span=self._span(token, operand))
+        return self.parse_primary()
 
     def parse_primary(self) -> Expr:
-        raise NotImplementedError("implemente primary")
+        left_paren = self.match(TokenKind.LEFT_PAREN)
+        if left_paren is not None:
+            expr = self.parse_expression()
+            right_paren = self.expect(TokenKind.RIGHT_PAREN)
+            expr.span = self._span(left_paren, right_paren)
+            return expr
+
+        identifier = self.match(TokenKind.IDENTIFIER)
+        if identifier is not None:
+            if self.match(TokenKind.LEFT_PAREN) is not None:
+                arguments = self.parse_arguments()
+                right_paren = self.expect(TokenKind.RIGHT_PAREN)
+                return CallExpr(
+                    identifier.lexeme,
+                    arguments,
+                    span=self._span(identifier, right_paren),
+                )
+            return IdentifierExpr(identifier.lexeme, span=self._token_span(identifier))
+
+        integer = self.match(TokenKind.INT_LITERAL)
+        if integer is not None:
+            return IntLiteral(integer.value, span=self._token_span(integer))
+
+        true_token = self.match(TokenKind.KW_TRUE)
+        if true_token is not None:
+            return BoolLiteral(True, span=self._token_span(true_token))
+
+        false_token = self.match(TokenKind.KW_FALSE)
+        if false_token is not None:
+            return BoolLiteral(False, span=self._token_span(false_token))
+
+        self.expect(PRIMARY_START)
 
     def parse_arguments(self) -> list[Expr]:
-        raise NotImplementedError("implemente arguments")
+        if self.peek().kind not in EXPRESSION_START:
+            return []
+        arguments = [self.parse_expression()]
+        while self.match(TokenKind.COMMA) is not None:
+            arguments.append(self.parse_expression())
+        return arguments
