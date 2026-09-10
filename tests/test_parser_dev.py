@@ -177,3 +177,46 @@ def test_print_vazio_e_erro_sintatico():
 
     with pytest.raises(ParserError):
         make_parser("print();").parse_print_statement()
+
+
+from ast_nodes import Block, IfStmt, ReturnStmt, WhileStmt
+
+
+def test_bloco_vazio_e_bloco_aninhado():
+    block = make_parser("{ { } }").parse_block()
+    assert isinstance(block, Block)
+    assert isinstance(block.statements[0], Block)
+    assert block.statements[0].statements == []
+
+
+def test_if_com_e_sem_else():
+    sem_else = make_parser("if (true) { }").parse_if_statement()
+    assert isinstance(sem_else, IfStmt) and sem_else.else_block is None
+    com_else = make_parser("if (true) { } else { }").parse_if_statement()
+    assert com_else.else_block is not None
+
+
+def test_while_exige_chaves():
+    stmt = make_parser("while (false) { }").parse_while_statement()
+    assert isinstance(stmt, WhileStmt)
+
+    import pytest
+    from parser import ParserError
+
+    with pytest.raises(ParserError):
+        make_parser("while (false) return 1;").parse_while_statement()
+
+
+def test_return_com_e_sem_valor():
+    vazio = make_parser("return;").parse_return_statement()
+    assert isinstance(vazio, ReturnStmt) and vazio.value is None
+    com_valor = make_parser("return 2 + 3;").parse_return_statement()
+    assert com_valor.value is not None
+
+
+def test_comando_vazio_e_erro_sintatico():
+    import pytest
+    from parser import ParserError
+
+    with pytest.raises(ParserError):
+        make_parser(";").parse_statement()
