@@ -4,11 +4,13 @@ from collections.abc import Sequence
 
 from Lexer import Token, TokenKind
 from ast_nodes import (
+    Assignment,
     BinaryExpr,
     BinaryOperator,
     Block,
     BoolLiteral,
     CallExpr,
+    CallStmt,
     Expr,
     FunctionDecl,
     IdentifierExpr,
@@ -23,6 +25,7 @@ from ast_nodes import (
     TypeName,
     UnaryExpr,
     UnaryOperator,
+    VarDecl,
 )
 
 
@@ -230,10 +233,29 @@ class Parser:
         raise NotImplementedError("implemente statement")
 
     def parse_id_or_call_statement(self) -> Stmt:
-        raise NotImplementedError("implemente id_or_call_statement")
+        name = self.expect(TokenKind.IDENTIFIER)
+        branch = self.expect({TokenKind.ASSIGN, TokenKind.LEFT_PAREN})
+        if branch.kind is TokenKind.ASSIGN:
+            value = self.parse_expression()
+            semicolon = self.expect(TokenKind.SEMICOLON)
+            target = IdentifierExpr(name.lexeme, span=self._token_span(name))
+            return Assignment(target, value, span=self._span(name, semicolon))
+
+        arguments = self.parse_arguments()
+        right_paren = self.expect(TokenKind.RIGHT_PAREN)
+        call = CallExpr(name.lexeme, arguments, span=self._span(name, right_paren))
+        semicolon = self.expect(TokenKind.SEMICOLON)
+        return CallStmt(call, span=self._span(name, semicolon))
 
     def parse_declaration(self) -> Stmt:
-        raise NotImplementedError("implemente declaration")
+        start = self.peek()
+        type_ = self.parse_type()
+        name = self.expect(TokenKind.IDENTIFIER)
+        initializer: Expr | None = None
+        if self.match(TokenKind.ASSIGN) is not None:
+            initializer = self.parse_expression()
+        semicolon = self.expect(TokenKind.SEMICOLON)
+        return VarDecl(type_, name.lexeme, initializer, span=self._span(start, semicolon))
 
     def parse_if_statement(self) -> Stmt:
         raise NotImplementedError("implemente if_statement")

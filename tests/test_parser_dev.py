@@ -119,3 +119,35 @@ def test_parenteses_agora_fecham_o_ciclo_de_expressao():
     wrapped = make_parser("(42)").parse_primary()
     assert wrapped.value == 42
     assert wrapped.span.end_column == 5
+
+
+from ast_nodes import Assignment, CallStmt, VarDecl
+
+
+def test_declaracao_com_e_sem_inicializador():
+    sem_init = make_parser("int x;").parse_declaration()
+    assert isinstance(sem_init, VarDecl) and sem_init.initializer is None
+    com_init = make_parser("bool ativo = true;").parse_declaration()
+    assert isinstance(com_init.initializer, BoolLiteral)
+
+
+def test_atribuicao_constroi_identifierexpr_como_alvo():
+    stmt = make_parser("x = 2;").parse_id_or_call_statement()
+    assert isinstance(stmt, Assignment)
+    assert isinstance(stmt.target, IdentifierExpr)
+    assert stmt.target.name == "x"
+    assert stmt.value.value == 2
+
+
+def test_chamada_como_comando_forma_callstmt():
+    stmt = make_parser("registrar();").parse_id_or_call_statement()
+    assert isinstance(stmt, CallStmt)
+    assert stmt.call.name == "registrar"
+
+
+def test_atribuicao_encadeada_e_erro_sintatico():
+    import pytest
+    from parser import ParserError
+
+    with pytest.raises(ParserError):
+        make_parser("x = y = 1;").parse_id_or_call_statement()
