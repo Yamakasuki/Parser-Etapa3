@@ -67,13 +67,11 @@ TYPE_BY_TOKEN = {
     TokenKind.KW_BOOL: TypeName.BOOL,
     TokenKind.KW_VOID: TypeName.VOID,
 }
-UNARY_OPERATORS = {
-    TokenKind.LOGICAL_NOT: UnaryOperator.NOT,
-    TokenKind.MINUS: UnaryOperator.NEGATE,
-}
 # Operadores de cada nivel, no formato de TYPE_START/STATEMENT_START: respondem
-# "o token atual continua este nivel?". A conversao para BinaryOperator dispensa
-# tabela - o enum de ast_nodes.py usa o proprio simbolo como valor ("+", "<=").
+# "o token atual continua este nivel?". A conversao para UnaryOperator e para
+# BinaryOperator dispensa tabela - os enums de ast_nodes.py usam o proprio
+# simbolo como valor ("!", "+", "<="), que e exatamente o lexeme do token.
+UNARY_TOKENS = {TokenKind.LOGICAL_NOT, TokenKind.MINUS}
 EQUALITY_TOKENS = {TokenKind.EQUAL_EQUAL, TokenKind.NOT_EQUAL}
 RELATIONAL_TOKENS = {
     TokenKind.LESS,
@@ -247,7 +245,7 @@ class Parser:
             return self.parse_print_statement()
         if kind is TokenKind.LEFT_BRACE:
             return self.parse_block()
-        self.expect(STATEMENT_START)
+        raise ParserError(self.peek(), STATEMENT_START)
 
     def parse_id_or_call_statement(self) -> Stmt:
         name = self.expect(TokenKind.IDENTIFIER)
@@ -386,46 +384,45 @@ class Parser:
             left = BinaryExpr(operator, left, right, span=self._span(left, right))
         return left
 
+    # unary ::= (LOGICAL_NOT | MINUS) unary | primary
     def parse_unary(self) -> Expr:
-        token = self.match(*UNARY_OPERATORS.keys())
-        if token is not None:
-            operand = self.parse_unary()
-            return UnaryExpr(UNARY_OPERATORS[token.kind], operand, span=self._span(token, operand))
-        return self.parse_primary()
+        if self.peek().kind not in UNARY_TOKENS:
+            return self.parse_primary()
+        token = self.advance()
+        operator = UnaryOperator(token.lexeme)
+        operand = self.parse_unary()
+        return UnaryExpr(operator, operand, span=self._span(token, operand))
 
+    # primary ::= LEFT_PAREN expression RIGHT_PAREN
+    #           | IDENTIFIER (LEFT_PAREN arguments RIGHT_PAREN)?
+    #           | INT_LITERAL | KW_TRUE | KW_FALSE
     def parse_primary(self) -> Expr:
-        left_paren = self.match(TokenKind.LEFT_PAREN)
-        if left_paren is not None:
+        kind = self.peek().kind
+
+        if kind is TokenKind.LEFT_PAREN:
+            left_paren = self.advance()
             expr = self.parse_expression()
             right_paren = self.expect(TokenKind.RIGHT_PAREN)
-            expr.span = self._span(left_paren, right_paren)
+            expr.span = self._span(left_paren, right_paren)  # parenteses nao criam no
             return expr
 
-        identifier = self.match(TokenKind.IDENTIFIER)
-        if identifier is not None:
-            if self.match(TokenKind.LEFT_PAREN) is not None:
-                arguments = self.parse_arguments()
-                right_paren = self.expect(TokenKind.RIGHT_PAREN)
-                return CallExpr(
-                    identifier.lexeme,
-                    arguments,
-                    span=self._span(identifier, right_paren),
-                )
-            return IdentifierExpr(identifier.lexeme, span=self._token_span(identifier))
+        if kind is TokenKind.IDENTIFIER:
+            name = self.advance()
+            if self.match(TokenKind.LEFT_PAREN) is None:
+                return IdentifierExpr(name.lexeme, span=self._token_span(name))
+            arguments = self.parse_arguments()
+            right_paren = self.expect(TokenKind.RIGHT_PAREN)
+            return CallExpr(name.lexeme, arguments, span=self._span(name, right_paren))
 
-        integer = self.match(TokenKind.INT_LITERAL)
-        if integer is not None:
-            return IntLiteral(integer.value, span=self._token_span(integer))
+        if kind is TokenKind.INT_LITERAL:
+            token = self.advance()
+            return IntLiteral(token.value, span=self._token_span(token))
 
-        true_token = self.match(TokenKind.KW_TRUE)
-        if true_token is not None:
-            return BoolLiteral(True, span=self._token_span(true_token))
+        if kind in (TokenKind.KW_TRUE, TokenKind.KW_FALSE):
+            token = self.advance()
+            return BoolLiteral(token.value, span=self._token_span(token))
 
-        false_token = self.match(TokenKind.KW_FALSE)
-        if false_token is not None:
-            return BoolLiteral(False, span=self._token_span(false_token))
-
-        self.expect(PRIMARY_START)
+        raise ParserError(self.peek(), PRIMARY_START)
 
     def parse_arguments(self) -> list[Expr]:
         if self.peek().kind not in EXPRESSION_START:
