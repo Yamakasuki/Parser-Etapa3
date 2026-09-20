@@ -1,21 +1,16 @@
 """Analisador léxico do MicroC — Etapa 1 do projeto de Compiladores.
 
-A estratégia é **mista**, como permite a seção 5 do enunciado:
+Estratégia **mista**, como permite a seção 5 do enunciado: um **autômato
+dirigido por tabela** (``microc_automato``) reconhece identificadores,
+inteiros, operadores e delimitadores pela regra do maior prefixo; **rotinas
+manuais** neste arquivo cuidam de espaços, comentários e strings.
 
-* um **autômato dirigido por tabela** (``microc_automato``) reconhece
-  identificadores, inteiros, operadores e delimitadores, aplicando a regra do
-  maior prefixo;
-* **rotinas manuais** neste arquivo cuidam de espaços, comentários e strings.
+A divisão não é arbitrária: erro de string ou de comentário é reportado numa
+posição que **não** é a corrente — a aspa de abertura, a barra invertida, o
+``/`` inicial. O autômato só sabe onde está agora.
 
-A linha divisória não é arbitrária. Cada erro de string ou comentário deve ser
-reportado numa posição que **não** é a posição corrente do autômato — a aspa de
-abertura, a barra invertida, a quebra de linha, o ``/`` inicial. Um autômato só
-sabe onde está agora; carregar essas posições por dentro da tabela seria
-empurrar estado extra pela máquina para depois desfazê-lo. Uma variável local
-numa rotina manual resolve em linha reta.
-
-Consulte ``docs/superpowers/specs/2026-08-20-lexer-microc-design.md`` para o
-racional completo de design.
+Racional completo em ``docs/superpowers/specs/2026-08-20-lexer-microc-design.md``,
+no repositório da Etapa 1 (``Lexer``), não neste.
 """
 
 from __future__ import annotations
@@ -89,8 +84,7 @@ class Token:
         return (
             f"<{self.kind.value}, {self.kind.name}, {self.lexeme!r}, "
             f"{self.value!r}, {self.line}, {self.column}>"
-            # <numero, NOME, repr(lexeme), repr(value), linha, coluna>
-            # exigido pelo enunciado (§6) é montado — !r no f-string chama repr() automaticamente.
+            # formato <numero, NOME, lexeme, value, linha, coluna> do §6
         )
 
 
@@ -108,11 +102,8 @@ class LexerError(Exception):
 #: Palavras reservadas do MicroC.
 #:
 #: A consulta acontece **depois** de o autômato consumir o identificador
-#: inteiro, como manda a seção 3.1 do enunciado. É isso que faz ``intx``,
-#: ``true1`` e ``_int`` serem ``IDENTIFIER``: o maior prefixo é o identificador
-#: completo, e só ele é procurado aqui. Como a busca é num ``dict`` comum,
-#: ``While`` não casa com ``while`` — a distinção entre maiúsculas e minúsculas
-#: vem de graça da comparação de strings do Python.
+#: inteiro (seção 3.1). É isso que faz ``intx``, ``true1`` e ``_int`` serem
+#: ``IDENTIFIER``, e ``While`` não casar com ``while``.
 PALAVRAS_RESERVADAS: dict[str, TokenKind] = {
     "int": TokenKind.KW_INT,
     "bool": TokenKind.KW_BOOL,
@@ -127,10 +118,8 @@ PALAVRAS_RESERVADAS: dict[str, TokenKind] = {
 }
 
 
-#: Tradução do estado final do autômato para o tipo público do token.
-#:
-#: Este mapa mora aqui, e não em ``microc_automato``, para que aquele módulo não
-#: precise importar ``TokenKind`` — o que criaria import circular.
+#: Tradução do estado final do autômato para o tipo público do token. Mora aqui,
+#: e não em ``microc_automato``, para aquele módulo não importar ``TokenKind``.
 ESTADO_PARA_TIPO: dict[Estado, TokenKind] = {
     Estado.IDENT: TokenKind.IDENTIFIER,
     Estado.INT: TokenKind.INT_LITERAL,
@@ -158,15 +147,10 @@ ESTADO_PARA_TIPO: dict[Estado, TokenKind] = {
 }
 
 
-#: Caracteres descartados entre tokens.
-#:
-#: Exatamente os três que a seção 3.2 do enunciado nomeia: "espaços, tabulações
-#: e quebras de linha". ``\r`` **não** está aqui de propósito. O enunciado nunca
-#: o menciona, e diz que o runner "lê arquivos em modo texto, normalizando as
-#: terminações de linha usuais" (seção 2.3) — ou seja, ``\r\n`` já virou ``\n``
-#: antes de o lexer ver qualquer coisa. Pela seção 3.4, um caractere que não
-#: inicia token é erro léxico; um ``\r`` avulso cai nessa regra em vez de ser
-#: silenciosamente tolerado.
+#: Caracteres descartados entre tokens: os três que a seção 3.2 nomeia. ``\r``
+#: fica FORA de propósito — o runner lê em modo texto e já normalizou ``\r\n``
+#: (seção 2.3), então um ``\r`` avulso é erro léxico pela seção 3.4, em vez de
+#: ser tolerado em silêncio.
 ESPACOS = " \t\n"
 
 
@@ -185,17 +169,14 @@ class Lexer:
     def tokens(self) -> Iterator[Token]:
         """Produz todos os tokens significativos e um único EOF ao final.
 
-        O cursor é recriado a cada chamada, de modo que percorrer o mesmo
-        ``Lexer`` duas vezes devolva o mesmo resultado em vez de uma sequência
-        vazia.
+        O cursor é recriado a cada chamada, para que percorrer o mesmo
+        ``Lexer`` duas vezes devolva o mesmo resultado.
         """
         self._cursor = Cursor(self.source)
 
         while True:
-            # Roda ANTES do teste de fim: assim o cursor já está depois de todo
-            # espaço e comentário final, e a posição do EOF sai correta de graça
-            # (entrada vazia -> 1:1; texto terminado em '\n' -> linha seguinte,
-            # coluna 1).
+            # Roda ANTES do teste de fim: assim o EOF sai na posição correta
+            # (entrada vazia -> 1:1; texto terminado em '\n' -> linha seguinte).
             self._pular_ignoraveis()
 
             if self._cursor.fim():
@@ -210,10 +191,8 @@ class Lexer:
 
     def scan(self) -> list[Token]:
         return list(self.tokens())
-        # scan() é só um atalho: list(...) sobre o gerador, consumindo tudo de uma vez
-        # Importante: se alguma chamada levantar LexerError no meio, o list() propaga 
-        # a exceção sem devolver nada — não existe uma lista parcial "vazando" para 
-        # quem chamou. É isso que garante "erros não deixam tokens parciais"(item 6).
+        # Se algo levantar LexerError no meio, o list() propaga sem devolver
+        # nada: erro nunca deixa lista parcial vazar para quem chamou (item 6).
 
     # ------------------------------------------------------------------
     # Núcleo dirigido por tabela
@@ -221,24 +200,19 @@ class Lexer:
 
     def _rodar_automato(self) -> Token:
         """Reconhece o maior prefixo válido a partir da posição corrente.
-        BACKTRAKING :
-        O algoritmo clássico consome caracteres e **retrocede** o cursor quando
-        trava. 
-        
-        Aqui fazemos o inverso: olhamos adiante com ``espiar(n)`` sem
-        consumir nada, memorizando o último estado aceitador visitado, e só no
-        final consumimos exatamente o tanto que foi aceito. Assim o cursor nunca
-        precisa desfazer contagem de linha e coluna.
 
-        Três exigências do enunciado saem daqui sem nenhum caso especial:
+        Sem backtracking: em vez de consumir e retroceder quando trava, olha
+        adiante com ``espiar(n)`` sem consumir, memoriza o último estado
+        aceitador visitado e só no fim consome o tanto que foi aceito.
 
-        * ``<=`` vence ``<`` — a caminhada simplesmente vai mais longe e
-          ``tamanho_aceito`` é sobrescrito (idem ``>=``, ``==``, ``!=``, ``&&``,
-          ``||``);
-        * ``1abc`` vira dois tokens — ``INT`` aceita o ``1``, o ``a`` não tem
-          transição saindo de ``INT``, e consumimos só o que foi aceito;
-        * ``&`` isolado é erro na coluna certa — ``E_COMERCIAL`` não é
-          aceitador, então ``ultimo_aceitador`` continua ``None``.
+        Três exigências do enunciado caem daqui sem caso especial:
+
+        * ``<=`` vence ``<`` — a caminhada vai mais longe e ``tamanho_aceito``
+          é sobrescrito (idem ``>=``, ``==``, ``!=``, ``&&``, ``||``);
+        * ``1abc`` vira dois tokens — o ``a`` não tem transição saindo de
+          ``INT``, e consumimos só o que foi aceito;
+        * ``&`` isolado é erro na coluna certa — ``E_COMERCIAL`` não aceita,
+          então ``ultimo_aceitador`` continua ``None``.
         """
         linha, coluna = self._cursor.posicao()  # início do lexema, para o erro
 
@@ -281,12 +255,8 @@ class Lexer:
         if tipo is TokenKind.IDENTIFIER:
             valor = lexema
         elif tipo is TokenKind.INT_LITERAL:
-            # int() aceita zeros à esquerda em decimal: "0042" -> 42. Os zeros
-            # sobrevivem apenas no lexema, como pede a seção 2.2. Não há limite
-            # de magnitude nesta etapa — validar 2**63-1 cabe à semântica.
-            # o Python já lida com zero à esquerda
-            # em base 10 sem precisar de tratamento manual; os zeros continuam existindo 
-            # no lexema, só não no value.
+            # "0042" -> 42: os zeros sobrevivem só no lexema (seção 2.2). Limite
+            # de magnitude não é desta etapa — validar 2**63-1 cabe à semântica.
             valor = int(lexema)
         elif tipo is TokenKind.KW_TRUE:
             valor = True
@@ -296,8 +266,6 @@ class Lexer:
             valor = None
 
         return Token(tipo, lexema, valor, linha, coluna)
-    # BONUS implementa uma mensagem para identificar o tipo de erro léxico, 
-    # para que o usuário saiba o que está errado no código fonte.
     def _descrever_caractere_invalido(self) -> str:
         """Mensagem do erro léxico para o caractere na posição corrente."""
         caractere = self._cursor.espiar()
@@ -316,9 +284,8 @@ class Lexer:
     def _pular_ignoraveis(self) -> None:
         """Descarta espaços e comentários até o próximo token significativo.
 
-        Um único laço, porque as três coisas se alternam livremente em
-        ``" \\t// x\\n/* y */ z"``. Nada aqui produz token: o enunciado não tem
-        membro de ``TokenKind`` para espaço nem para comentário.
+        Um laço só, porque as três coisas se alternam livremente. Nada aqui
+        produz token: não há ``TokenKind`` para espaço nem para comentário.
         """
         while not self._cursor.fim():
             caractere = self._cursor.espiar()
@@ -335,9 +302,8 @@ class Lexer:
     def _pular_comentario_de_linha(self) -> None:
         """Consome ``//`` até a quebra de linha, sem consumi-la.
 
-        Deixar o ``\\n`` para a iteração seguinte do laço externo faz a
-        atualização de linha acontecer num lugar só. O comentário também pode
-        terminar no fim do arquivo, sem ``\\n`` nenhum.
+        Deixar o ``\\n`` para o laço externo concentra a contagem de linha num
+        lugar só. O comentário também pode terminar no fim do arquivo.
         """
         self._cursor.avancar()  # primeira '/'
         self._cursor.avancar()  # segunda '/'
@@ -349,9 +315,8 @@ class Lexer:
     def _pular_comentario_de_bloco(self) -> None:
         """Consome ``/* ... */``, terminando no primeiro ``*/``.
 
-        Blocos **não aninham** (seção 3.2), então não contamos níveis. Note que
-        ``/*/`` não fecha: depois de consumir ``/*`` sobra apenas ``/``, e o par
-        ``*/`` nunca aparece.
+        Blocos **não aninham** (seção 3.2), então não contamos níveis: ``/*/``
+        não fecha, porque depois do ``/*`` sobra só ``/``.
         """
         # Capturado antes de consumir qualquer coisa: se o bloco não fechar, o
         # erro tem de apontar o '/' inicial, não o fim do arquivo.
@@ -375,10 +340,9 @@ class Lexer:
     def _exigir_ascii(self) -> None:
         """Rejeita caractere não ASCII na posição corrente.
 
-        Chamado de dentro dos comentários porque o enunciado é explícito:
-        "caracteres não ASCII continuam inválidos mesmo quando aparecem dentro
-        de comentários" (seção 3.2). Fora dos comentários e das strings, quem
-        cuida disso é o próprio autômato, via ``classificar``.
+        Chamado de dentro dos comentários porque a seção 3.2 é explícita: não
+        ASCII é inválido mesmo dentro de comentário. Fora deles quem cuida é o
+        autômato, via ``classificar``.
         """
         caractere = self._cursor.espiar()
         if not caractere.isascii():
@@ -396,13 +360,12 @@ class Lexer:
     def _ler_string(self) -> Token:
         """Reconhece um literal de string, acumulando lexema e valor em paralelo.
 
-        O ``lexeme`` preserva a grafia original — com as aspas e a barra
-        invertida literal — enquanto o ``value`` guarda o conteúdo decodificado,
-        sem aspas (seção 3.3). Por isso as duas listas crescem lado a lado em
-        vez de uma ser derivada da outra no fim.
+        O ``lexeme`` preserva a grafia original; o ``value`` guarda o conteúdo
+        decodificado, sem aspas (seção 3.3) — por isso as duas listas crescem
+        lado a lado.
 
-        Três posições de erro diferentes aparecem aqui, e é justamente por isso
-        que esta rotina não está no autômato:
+        As três posições de erro distintas são o motivo de esta rotina não
+        estar no autômato:
 
         * EOF antes de fechar -> a **aspa de abertura**;
         * quebra de linha -> a **própria quebra**;

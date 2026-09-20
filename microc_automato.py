@@ -1,18 +1,12 @@
 """Autômato determinístico do MicroC: estados, símbolos e transições.
 
-Este módulo é **deliberadamente ignorante de ``TokenKind``**. Se ele importasse
-o enum de ``Lexer.py``, e ``Lexer.py`` importasse este módulo, teríamos import
-circular — o Python quebraria dependendo de qual módulo fosse carregado
-primeiro. A tradução ``Estado -> TokenKind`` mora em ``Lexer.py``, onde
-``TokenKind`` já vive.
+Não conhece ``TokenKind``: se conhecesse, e ``Lexer.py`` importasse este
+módulo, haveria import circular. A tradução ``Estado -> TokenKind`` mora em
+``Lexer.py``. Assim o autômato só sabe estados, símbolos e para onde ir.
 
-O efeito colateral é bom: o autômato pode ser lido e testado sem arrastar nada
-do MicroC junto. Ele só sabe estados, símbolos e para onde ir.
-
-Cobertura: identificadores, inteiros, operadores e delimitadores. Strings e
-comentários **não** estão aqui — são rotinas manuais em ``Lexer.py``, porque
-cada um exige uma posição de erro diferente da posição corrente do autômato
-(ver a seção 2 do documento de design).
+Cobre identificadores, inteiros, operadores e delimitadores. Strings e
+comentários são rotinas manuais em ``Lexer.py``, porque cada um exige uma
+posição de erro diferente da posição corrente do autômato.
 """
 
 from __future__ import annotations
@@ -21,11 +15,8 @@ import enum
 
 
 class Estado(enum.Enum):
-    """Estados do autômato.
-
-    ``INICIO`` é o único estado de partida. Os demais são alcançados por
-    consumo de caracteres, e a maioria é aceitadora — as exceções estão
-    documentadas em ``ESTADOS_ACEITADORES``.
+    """Estados do autômato. ``INICIO`` é o único de partida; quais aceitam
+    está em ``ESTADOS_ACEITADORES``.
     """
 
     INICIO = enum.auto()
@@ -60,10 +51,9 @@ class Estado(enum.Enum):
     PONTO_VIRGULA = enum.auto()
 
 
-#: Símbolos de classe. Letras e dígitos colapsam em duas classes porque
-#: identificadores e inteiros não distinguem *qual* letra ou dígito apareceu.
-#: Operadores continuam sendo eles mesmos, porque '<' e '>' levam a estados
-#: diferentes. Não há colisão: uma chave literal é sempre um caractere único.
+#: Letras e dígitos colapsam em duas classes: identificadores e inteiros não
+#: distinguem *qual* letra apareceu. Operadores continuam sendo eles mesmos,
+#: porque '<' e '>' levam a estados diferentes.
 LETRA = "LETRA"
 DIGITO = "DIGITO"
 
@@ -71,11 +61,9 @@ DIGITO = "DIGITO"
 def classificar(caractere: str) -> str:
     """Reduz um caractere ao símbolo que indexa a tabela de transições.
 
-    O teste ``isascii()`` não é zelo excessivo. Sem ele, ``"é".isalpha()`` é
-    ``True`` em Python, e ``Lexer("é")`` produziria um identificador — violando
-    a regra de que o fonte MicroC é ASCII (enunciado, seção 3.4). Com ele, ``é``
-    devolve ``"é"``, que não tem transição nenhuma, e o erro léxico cai
-    naturalmente onde deve, sem nenhum ``if`` dedicado.
+    O ``isascii()`` é necessário: sem ele ``"é".isalpha()`` é ``True`` e ``é``
+    viraria identificador, violando a seção 3.4. Com ele ``é`` não tem transição
+    e o erro léxico cai sozinho no lugar certo.
     """
     if caractere.isascii() and (caractere.isalpha() or caractere == "_"):
         return LETRA
@@ -93,9 +81,8 @@ TABELA_TRANSICOES: dict[Estado, dict[str, Estado]] = {
         "+": Estado.MAIS,
         "-": Estado.MENOS,
         "*": Estado.ASTERISCO,
-        # Uma barra só chega aqui quando não é início de comentário: quem roda
-        # antes do autômato (`Lexer._pular_ignoraveis`) já descartou '//' e '/*'.
-        # Comentário e SLASH nunca competem porque nem chegam a se encontrar.
+        # Só chega aqui quando não abre comentário: `_pular_ignoraveis` roda
+        # antes e já descartou '//' e '/*'.
         "/": Estado.BARRA,
         "%": Estado.PORCENTO,
         "<": Estado.MENOR,
@@ -111,10 +98,8 @@ TABELA_TRANSICOES: dict[Estado, dict[str, Estado]] = {
         ",": Estado.VIRGULA,
         ";": Estado.PONTO_VIRGULA,
     },
-    # Identificador absorve letras e dígitos; inteiro absorve só dígitos.
-    # É essa assimetria que faz "1abc" virar INT_LITERAL(1) + IDENTIFIER(abc):
-    # o 'a' não tem para onde ir a partir de INT, a caminhada trava, e o lexer
-    # consome apenas o que foi aceito.
+    # Identificador absorve letras e dígitos; inteiro, só dígitos. É essa
+    # assimetria que faz "1abc" virar INT_LITERAL(1) + IDENTIFIER(abc).
     Estado.IDENT: {LETRA: Estado.IDENT, DIGITO: Estado.IDENT},
     Estado.INT: {DIGITO: Estado.INT},
     # Operadores de dois caracteres. O munch máximo do lexer garante que estes
@@ -130,14 +115,10 @@ TABELA_TRANSICOES: dict[Estado, dict[str, Estado]] = {
 
 #: Estados que encerram um lexema válido.
 #:
-#: ``E_COMERCIAL`` e ``BARRA_VERTICAL`` estão FORA desta lista de propósito. É
-#: assim que "ocorrências isoladas de & ou | são erros léxicos" (enunciado,
-#: seção 3.4) vira uma **propriedade do autômato** em vez de um ``if``: um '&'
-#: solitário alcança ``E_COMERCIAL``, que não aceita, então a caminhada termina
-#: sem nenhum estado aceitador visitado — exatamente a condição de erro.
-#:
-#: ``INICIO`` também está fora, pelo mesmo mecanismo: um caractere que não abre
-#: token nenhum não sai de ``INICIO`` e cai na mesma condição de erro.
+#: ``E_COMERCIAL``, ``BARRA_VERTICAL`` e ``INICIO`` ficam FORA de propósito: é
+#: assim que "& ou | isolados são erros léxicos" (seção 3.4) vira propriedade do
+#: autômato em vez de um ``if`` — a caminhada termina sem nenhum aceitador
+#: visitado, que é exatamente a condição de erro.
 ESTADOS_ACEITADORES: frozenset[Estado] = frozenset(
     {
         Estado.IDENT,
@@ -168,9 +149,5 @@ ESTADOS_ACEITADORES: frozenset[Estado] = frozenset(
 
 
 def transicao(estado: Estado, simbolo: str) -> Estado | None:
-    """Devolve o estado seguinte, ou ``None`` se a caminhada trava aqui.
-
-    Expor a consulta como função (em vez de deixar quem chama indexar a tabela)
-    mantém o formato interno de ``TABELA_TRANSICOES`` como detalhe deste módulo.
-    """
+    """Devolve o estado seguinte, ou ``None`` se a caminhada trava aqui."""
     return TABELA_TRANSICOES.get(estado, {}).get(simbolo)
