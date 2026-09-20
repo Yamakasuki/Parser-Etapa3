@@ -8,12 +8,12 @@ Leia o [enunciado completo](ENUNCIADO.pdf) e a gramática
 [`source_grammar.ebnf`](source_grammar.ebnf) antes de começar. A especificação da
 linguagem MicroC continua sendo a referência normativa.
 
-## Antes de programar: recupere seu lexer
+## O lexer
 
-O arquivo `Lexer.py` deste repositório contém apenas a interface publicada na
-primeira etapa. Substitua-o pelo `Lexer.py` implementado pelo seu trio. Os nomes
-e números de `TokenKind` e os campos de `Token` devem permanecer exatamente
-iguais aos publicados.
+`Lexer.py` é a implementação do grupo entregue na primeira etapa, acompanhada de
+`microc_automato.py` (autômato dirigido por tabela) e `microc_cursor.py`
+(navegação com linha e coluna). Os nomes e números de `TokenKind` e os campos de
+`Token` são exatamente os publicados.
 
 O projeto de transformação de gramáticas é independente desta entrega. Não é
 necessário copiar `grammar.py` nem gerar uma gramática durante a execução: a
@@ -29,10 +29,12 @@ gramática LL(1) que deve orientar o parser já está em `source_grammar.ebnf`.
 │   ├── cases/invalid/*.mc       # programas públicos que devem ser rejeitados
 │   └── test_parser.py           # testes e inspeções da AST
 ├── ENUNCIADO.pdf                # enunciado da etapa
-├── Lexer.py                     # substitua pela implementação do grupo
+├── Lexer.py                     # lexer do grupo (etapa 1)
+├── microc_automato.py           # autômato dirigido por tabela do lexer
+├── microc_cursor.py             # cursor com linha e coluna do lexer
 ├── ast_nodes.py                 # AST completa fornecida
 ├── ast_printer.py               # visualizações em árvore e Graphviz DOT
-├── parser.py                    # parser a completar
+├── parser.py                    # parser por descida recursiva
 ├── runner.py                    # fonte MicroC para JSON, árvore ou DOT
 ├── source_grammar.ebnf          # gramática LL(1) fornecida
 ├── test.mc                      # programa para experimentação
@@ -41,11 +43,10 @@ gramática LL(1) que deve orientar o parser já está em `source_grammar.ebnf`.
 ```
 
 `parse_program`, `parse_function`, `parse_type`, as operações sobre o fluxo de
-tokens, os spans, os erros e toda a hierarquia da AST já estão implementados.
-Complete os demais métodos `parse_*` de `parser.py` conforme a EBNF.
-
-Não altere nomes, campos ou assinaturas públicas de `ast_nodes.py`, `Parser`,
-`ParserError`, `Token` ou `TokenKind`. É permitido criar auxiliares.
+tokens, os spans, os erros e toda a hierarquia da AST vieram prontos no starter.
+Os demais métodos `parse_*` foram implementados pelo grupo, um por não terminal
+da EBNF, sem alterar nomes, campos ou assinaturas públicas de `ast_nodes.py`,
+`Parser`, `ParserError`, `Token` ou `TokenKind`.
 
 ## Preparação do ambiente
 
@@ -102,9 +103,8 @@ Para executar os testes públicos:
 python -m pytest -q
 ```
 
-Os testes inicialmente falham com `NotImplementedError`. Eles passarão
-progressivamente conforme as derivações forem implementadas. A correção também
-usará testes privados compatíveis com o enunciado.
+A suíte pública tem 18 testes e passa integralmente. A correção também usará
+testes privados compatíveis com o enunciado.
 
 Os arquivos em `tests/cases/` são parte da documentação executável. Cada caso
 possui nome descritivo e pode ser executado isoladamente com o runner. Por
@@ -124,7 +124,6 @@ python -m pytest -q tests/test_parser.py -k precedencia
 
 ## Antes de entregar
 
-- confirme que seu `Lexer.py` completo foi copiado para este repositório;
 - confira que toda entrada termina com exatamente um token `EOF`;
 - não implemente regras semânticas no parser;
 - execute `python -m pytest -q`; e

@@ -6,3 +6,5 @@ venv/
 .coverage
 htmlcov/
 
+# suite de apoio do grupo: fica so no ambiente local
+tests/test_parser_dev.py
