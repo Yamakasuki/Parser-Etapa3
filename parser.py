@@ -71,25 +71,18 @@ UNARY_OPERATORS = {
     TokenKind.LOGICAL_NOT: UnaryOperator.NOT,
     TokenKind.MINUS: UnaryOperator.NEGATE,
 }
-EQUALITY_OPERATORS = {
-    TokenKind.EQUAL_EQUAL: BinaryOperator.EQUAL,
-    TokenKind.NOT_EQUAL: BinaryOperator.NOT_EQUAL,
+# Operadores de cada nivel, no formato de TYPE_START/STATEMENT_START: respondem
+# "o token atual continua este nivel?". A conversao para BinaryOperator dispensa
+# tabela - o enum de ast_nodes.py usa o proprio simbolo como valor ("+", "<=").
+EQUALITY_TOKENS = {TokenKind.EQUAL_EQUAL, TokenKind.NOT_EQUAL}
+RELATIONAL_TOKENS = {
+    TokenKind.LESS,
+    TokenKind.LESS_EQUAL,
+    TokenKind.GREATER,
+    TokenKind.GREATER_EQUAL,
 }
-RELATIONAL_OPERATORS = {
-    TokenKind.LESS: BinaryOperator.LESS,
-    TokenKind.LESS_EQUAL: BinaryOperator.LESS_EQUAL,
-    TokenKind.GREATER: BinaryOperator.GREATER,
-    TokenKind.GREATER_EQUAL: BinaryOperator.GREATER_EQUAL,
-}
-ADDITIVE_OPERATORS = {
-    TokenKind.PLUS: BinaryOperator.ADD,
-    TokenKind.MINUS: BinaryOperator.SUBTRACT,
-}
-MULTIPLICATIVE_OPERATORS = {
-    TokenKind.STAR: BinaryOperator.MULTIPLY,
-    TokenKind.SLASH: BinaryOperator.DIVIDE,
-    TokenKind.PERCENT: BinaryOperator.REMAINDER,
-}
+ADDITIVE_TOKENS = {TokenKind.PLUS, TokenKind.MINUS}
+MULTIPLICATIVE_TOKENS = {TokenKind.STAR, TokenKind.SLASH, TokenKind.PERCENT}
 
 
 class ParserError(Exception):
@@ -335,45 +328,63 @@ class Parser:
             last = token
         return StringLiteral(value, span=self._span(first, last))
 
+    # expression ::= logical_or
     def parse_expression(self) -> Expr:
         return self.parse_logical_or()
 
+    # logical_or ::= logical_and (LOGICAL_OR logical_and)*
     def parse_logical_or(self) -> Expr:
-        return self._parse_binary_level(
-            self.parse_logical_and, {TokenKind.LOGICAL_OR: BinaryOperator.LOGICAL_OR}
-        )
+        left = self.parse_logical_and()
+        while self.check(TokenKind.LOGICAL_OR):
+            operator = BinaryOperator(self.advance().lexeme)
+            right = self.parse_logical_and()
+            left = BinaryExpr(operator, left, right, span=self._span(left, right))
+        return left
 
+    # logical_and ::= equality (LOGICAL_AND equality)*
     def parse_logical_and(self) -> Expr:
-        return self._parse_binary_level(
-            self.parse_equality, {TokenKind.LOGICAL_AND: BinaryOperator.LOGICAL_AND}
-        )
+        left = self.parse_equality()
+        while self.check(TokenKind.LOGICAL_AND):
+            operator = BinaryOperator(self.advance().lexeme)
+            right = self.parse_equality()
+            left = BinaryExpr(operator, left, right, span=self._span(left, right))
+        return left
 
+    # equality ::= relational ((EQUAL_EQUAL | NOT_EQUAL) relational)*
     def parse_equality(self) -> Expr:
-        return self._parse_binary_level(self.parse_relational, EQUALITY_OPERATORS)
+        left = self.parse_relational()
+        while self.peek().kind in EQUALITY_TOKENS:
+            operator = BinaryOperator(self.advance().lexeme)
+            right = self.parse_relational()
+            left = BinaryExpr(operator, left, right, span=self._span(left, right))
+        return left
 
+    # relational ::= additive ((LESS | LESS_EQUAL | GREATER | GREATER_EQUAL) additive)*
     def parse_relational(self) -> Expr:
-        return self._parse_binary_level(self.parse_additive, RELATIONAL_OPERATORS)
+        left = self.parse_additive()
+        while self.peek().kind in RELATIONAL_TOKENS:
+            operator = BinaryOperator(self.advance().lexeme)
+            right = self.parse_additive()
+            left = BinaryExpr(operator, left, right, span=self._span(left, right))
+        return left
 
+    # additive ::= multiplicative ((PLUS | MINUS) multiplicative)*
     def parse_additive(self) -> Expr:
-        return self._parse_binary_level(self.parse_multiplicative, ADDITIVE_OPERATORS)
+        left = self.parse_multiplicative()
+        while self.peek().kind in ADDITIVE_TOKENS:
+            operator = BinaryOperator(self.advance().lexeme)
+            right = self.parse_multiplicative()
+            left = BinaryExpr(operator, left, right, span=self._span(left, right))
+        return left
 
+    # multiplicative ::= unary ((STAR | SLASH | PERCENT) unary)*
     def parse_multiplicative(self) -> Expr:
-        return self._parse_binary_level(self.parse_unary, MULTIPLICATIVE_OPERATORS)
-
-    # helper compartilhado por todos os niveis de expressao binaria
-    def _parse_binary_level(self, operand, operators: dict[TokenKind, BinaryOperator]) -> Expr:
-        left = operand()
-        while True:
-            token = self.match(*operators.keys())
-            if token is None:
-                return left
-            right = operand()
-            left = BinaryExpr(
-                operators[token.kind],
-                left,
-                right,
-                span=self._span(left, right),
-            )
+        left = self.parse_unary()
+        while self.peek().kind in MULTIPLICATIVE_TOKENS:
+            operator = BinaryOperator(self.advance().lexeme)
+            right = self.parse_unary()
+            left = BinaryExpr(operator, left, right, span=self._span(left, right))
+        return left
 
     def parse_unary(self) -> Expr:
         token = self.match(*UNARY_OPERATORS.keys())
